@@ -1,0 +1,19 @@
+[package]
+name = "platfoxbot"
+description = "(Platinum Foxes Bot) twitter to telegram image reposter"
+version = "2.0.0"
+edition = "2021"
+
+[profile.release]
+strip = true
+#opt-level = "z"
+lto = true
+
+[dependencies]
+serde = { version = "*", features = [ "derive" ] }
+serde_json = "*"
+toml = "*"
+reqwest = { version = "*", features = [ "blocking" ] }
+clap = { version = "*", features = [ "derive" ] }
+#tokio = { version = "*", features = [ "full" ] }
+#async-trait = "*"
