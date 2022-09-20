@@ -28,9 +28,16 @@ pub enum TwitterMedia {
 
 #[derive(Deserialize)]
 struct TwitterUserTimeline {
+    #[serde(default)]
     data: Vec<TwitterRawTweet>,
+    #[serde(default)]
     includes: TwitterTimelineIncludes,
+//    meta: TwitterTimelineMeta,
 }
+//#[derive(Deserialize)]
+//struct TwitterTimelineMeta {
+//    result_count: u32,
+//}
 #[derive(Deserialize)]
 struct TwitterRawTweet {
     id: String,
@@ -65,29 +72,38 @@ struct TwitterTimelineMediaVariants {
     url: String,
 }
 
+impl Default for TwitterTimelineIncludes {
+    fn default() -> Self {
+        Self { media: Vec::with_capacity(0), users: Vec::with_capacity(0) }
+    }
+}
+
 impl TwitterClient {
     pub fn new(token: String) -> Self {
         Self { token, last_ids: HashMap::new() }
     }
 
     pub fn fetch_from(&mut self, user_id: String) -> Result<Vec<TwitterTweet>, reqwest::Error> {
+        let last_id = self.last_ids.get(&user_id);
+
         let client = reqwest::blocking::Client::new();
         let res = client
             .get(format!("https://api.twitter.com/2/users/{}/tweets", user_id))
             .query(&[
-                ("exclude",      "replies,retweets"),
-                ("tweet.fields", "attachments,author_id"),
-                ("expansions",   "attachments.media_keys,author_id"),
-                ("media.fields", "type,url,variants"),
-                ("max_results",  "5"),
+                ("exclude",      "replies,retweets".into()),
+                ("tweet.fields", "attachments,author_id".into()),
+                ("expansions",   "attachments.media_keys,author_id".into()),
+                ("media.fields", "type,url,variants".into()),
+                ("max_results",  "5".into()),
+                ("since_id",     last_id.map_or("".into(), |f| f.to_string())),
             ])
             .header("Authorization", format!("Bearer {}", self.token))
-            //.header("User-Agent", "platfoxbot/2.0.0 (+https://ceheki.org)")
             .send()?;
 
-        let data: TwitterUserTimeline = serde_json::from_str(&res.text()?).unwrap();
+        let text = res.text()?;
+        let data: TwitterUserTimeline = serde_json::from_str(&text).unwrap();
 
-        let last_id = *self.last_ids.get(&user_id).unwrap_or(&0);
+        let last_id = *last_id.unwrap_or(&0);
 
         let mut res = vec![];
 
