@@ -10,6 +10,8 @@ pub struct ChannelPost {
     /// Post source. Please use `<SOCIAL> // <GROUP>` format.
     /// Example: `twitter // OnlyFlans`
     pub source: String,
+    /// Post source URL
+    pub source_url: Option<String>,
 }
 
 /// Generic media in channel post.

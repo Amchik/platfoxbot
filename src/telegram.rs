@@ -16,6 +16,7 @@ struct TelegramInputMedia {
     r#type: String,
     media: String,
     caption: String,
+    parse_mode: String,
 }
 
 #[derive(Deserialize)]
@@ -24,13 +25,24 @@ struct TelegramErrorResponse {
     error_code: u16,
 }
 
+fn escape_html(s: String) -> String {
+    s.chars().into_iter()
+        .map(|c| match c {
+            '<' => "&lt;".into(),
+            '>' => "&gt;".into(),
+            '&' => "&amp;".into(),
+            _ => c.to_string(),
+        })
+        .collect()
+}
+
 impl TelegramClient {
     pub fn new(token: String) -> Self {
         Self { token }
     }
 
     pub fn create_post(&self, chat_id: String, post: ChannelPost) -> Result<TelegramResponse, reqwest::Error> {
-        if post.media.len() == 0 {
+        if post.media.is_empty() {
             return Ok(TelegramResponse::Success);
             // TODO: send text
         }
@@ -40,15 +52,23 @@ impl TelegramClient {
                 r#type: "photo".into(),
                 media: url.into(),
                 caption: String::with_capacity(0),
+                parse_mode: String::with_capacity(0),
             },
             ChannelPostMedia::Video(url) => TelegramInputMedia {
                 r#type: "video".into(),
                 media: url.into(),
                 caption: String::with_capacity(0),
+                parse_mode: String::with_capacity(0),
             },
         }).collect();
 
-        media[0].caption = format!("{}\n\nsrc: {}", post.text, post.source);
+
+        if let Some(source_url) = post.source_url {
+            media[0].caption = format!("{}\n\nsrc: <a href=\"{}\">{}</a>", escape_html(post.text), source_url, escape_html(post.source));
+            media[0].parse_mode = "HTML".into();
+        } else {
+            media[0].caption = format!("{}\n\nsrc: {}", post.text, post.source);
+        }
 
         let media = serde_json::to_string(&media).unwrap();
 

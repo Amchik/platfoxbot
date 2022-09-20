@@ -14,6 +14,8 @@ pub struct TwitterClient {
 #[derive(Clone, Debug)]
 pub struct TwitterTweet {
     pub id: u64,
+    pub author_id: u64,
+    pub author_name: String,
     pub text: String,
     pub media: Vec<TwitterMedia>,
 }
@@ -42,6 +44,13 @@ struct TwitterRawTweetAttachments {
 #[derive(Deserialize)]
 struct TwitterTimelineIncludes {
     media: Vec<TwitterTimelineMedia>,
+    users: Vec<TwitterTimelineUser>,
+}
+#[derive(Deserialize)]
+struct TwitterTimelineUser {
+    id: String,
+    name: String,
+    //username: String,
 }
 #[derive(Deserialize)]
 struct TwitterTimelineMedia {
@@ -67,8 +76,8 @@ impl TwitterClient {
             .get(format!("https://api.twitter.com/2/users/{}/tweets", user_id))
             .query(&[
                 ("exclude",      "replies,retweets"),
-                ("tweet.fields", "attachments"),
-                ("expansions",   "attachments.media_keys"),
+                ("tweet.fields", "attachments,author_id"),
+                ("expansions",   "attachments.media_keys,author_id"),
                 ("media.fields", "type,url,variants"),
                 ("max_results",  "5"),
             ])
@@ -102,9 +111,12 @@ impl TwitterClient {
             } else {
                 vec![]
             };
+            let author = data.includes.users.iter().find(|f| f.id == user_id).unwrap();
 
             res.push(TwitterTweet {
                 id,
+                author_id: user_id.parse().unwrap(),
+                author_name: author.name.clone(),
                 text: tweet.text,
                 media,
             });
@@ -129,7 +141,8 @@ impl Into<ChannelPost> for TwitterTweet {
                     TwitterMedia::Video(s) => ChannelPostMedia::Video(s.clone()),
                 })
                 .collect(),
-            source: "twitter".into()
+            source: format!("twitter // {}", self.author_name),
+            source_url: Some(format!("https://twitter.com/_/status/{}", self.id))
         }
     }
 }
