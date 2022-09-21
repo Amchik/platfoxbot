@@ -46,11 +46,14 @@ struct TwitterRawTweet {
 }
 #[derive(Deserialize)]
 struct TwitterRawTweetAttachments {
+    #[serde(default)]
     media_keys: Vec<String>,
 }
 #[derive(Deserialize)]
 struct TwitterTimelineIncludes {
+    #[serde(default)]
     media: Vec<TwitterTimelineMedia>,
+    #[serde(default)]
     users: Vec<TwitterTimelineUser>,
 }
 #[derive(Deserialize)]
