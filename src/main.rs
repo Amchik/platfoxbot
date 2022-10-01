@@ -21,7 +21,11 @@ struct Args {
 
     /// Ignores config cache file and use by command line arguments.
     #[clap(long, value_parser, default_value_t = false)]
-    ignore_config_cache_file: bool
+    ignore_config_cache_file: bool,
+
+    /// Create cache file and exit
+    #[clap(long, value_parser)]
+    create_cache: bool,
 }
 
 fn main() {
@@ -57,6 +61,10 @@ fn main() {
 
     for user_id in cfg.twitter.ids {
         let posts = tw.fetch_from(user_id).unwrap();
+
+        if args.create_cache {
+            continue;
+        }
 
         for post in posts.iter().rev() {
             let res = tg.create_post(cfg.telegram.chat_id.clone(), post.clone().into()).unwrap();
