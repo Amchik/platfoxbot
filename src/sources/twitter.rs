@@ -7,7 +7,7 @@ use super::{ChannelPost, ChannelPostMedia};
 pub struct TwitterClient {
     /// Twitter bearer token
     pub token: String,
-    /// user_id -> tweet_id
+    /// HashMap of known since_ids in format user_id -> last_id
     pub last_ids: HashMap<String, u64>,
 }
 
@@ -49,7 +49,7 @@ struct TwitterRawTweetAttachments {
     #[serde(default)]
     media_keys: Vec<String>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Default)]
 struct TwitterTimelineIncludes {
     #[serde(default)]
     media: Vec<TwitterTimelineMedia>,
@@ -75,15 +75,6 @@ struct TwitterTimelineMediaVariants {
     url: String,
 }
 
-impl Default for TwitterTimelineIncludes {
-    fn default() -> Self {
-        Self {
-            media: Vec::with_capacity(0),
-            users: Vec::with_capacity(0),
-        }
-    }
-}
-
 impl TwitterClient {
     pub fn new(token: String) -> Self {
         Self {
@@ -96,13 +87,13 @@ impl TwitterClient {
         let last_id = self.last_ids.get(&user_id);
 
         let query = {
-            let mut query = HashMap::new();
-
-            query.insert("exclude", "replies,retweets".into());
-            query.insert("tweet.fields", "attachments,author_id".into());
-            query.insert("expansions", "attachments.media_keys,author_id".into());
-            query.insert("media.fields", "type,url,variants".into());
-            query.insert("max_results", "5".into());
+            let mut query = HashMap::from([
+                ("exclude", "replies,retweets".into()),
+                ("tweet.fields", "attachments,author_id".into()),
+                ("expansions", "attachments.media_keys,author_id".into()),
+                ("media.fields", "type,url,variants".into()),
+                ("max_results", "5".into()),
+            ]);
 
             if let Some(last_id) = last_id {
                 query.insert("since_id", last_id.to_string());
@@ -122,51 +113,49 @@ impl TwitterClient {
             .send()?;
 
         let text = res.text()?;
-        let data: TwitterUserTimeline = serde_json::from_str(&text).unwrap();
+        let data: TwitterUserTimeline = serde_json::from_str(&text).expect("JSON schema is invalid");
 
-        let last_id = *last_id.unwrap_or(&0);
+        let last_id = last_id.copied().unwrap_or_default();
 
         let mut res = vec![];
 
         for tweet in data.data {
-            let id = tweet.id.parse().unwrap();
+            let id = tweet.id.parse().expect("tweet id is not a number");
 
             if id <= last_id {
                 continue;
             }
 
-            let media = if let Some(attachments) = tweet.attachments {
-                attachments
-                    .media_keys
-                    .iter()
-                    .map(|f| data.includes.media.iter().position(|r| &r.media_key == f))
-                    .map(|idx| &data.includes.media[idx.unwrap()])
-                    .map(|m| {
-                        if m.r#type == "photo" {
-                            TwitterMedia::Photo(m.url.clone().unwrap())
-                        } else {
-                            TwitterMedia::Video(
-                                m.variants
-                                    .as_ref()
-                                    .unwrap()
-                                    .iter()
-                                    .max_by_key(|v| v.bitrate)
-                                    .unwrap()
-                                    .url
-                                    .clone(),
-                            )
-                        }
-                    })
-                    .collect()
-            } else {
-                vec![]
-            };
+            let media = tweet
+                .attachments
+                .iter()
+                .flat_map(|attachments| &attachments.media_keys)
+                .map(|f| data.includes.media.iter().position(|r| &r.media_key == f))
+                .map(|idx| &data.includes.media[idx.expect("api returned invalid media_key")])
+                .map(|m| {
+                    if m.r#type == "photo" {
+                        TwitterMedia::Photo(m.url.clone().unwrap())
+                    } else {
+                        TwitterMedia::Video(
+                            m.variants
+                                .as_ref()
+                                .unwrap()
+                                .iter()
+                                .max_by_key(|v| v.bitrate)
+                                .expect("api doesn't returned normal video")
+                                .url
+                                .clone(),
+                        )
+                    }
+                })
+                .collect();
+            // TODO: author of @username timeline is always @username... (if it not retweet)
             let author = data
                 .includes
                 .users
                 .iter()
                 .find(|f| f.id == user_id)
-                .unwrap();
+                .expect("api doesn't returned author object");
 
             res.push(TwitterTweet {
                 id,
