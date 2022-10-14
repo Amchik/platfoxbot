@@ -23,7 +23,6 @@ pub struct TwitterTweet {
 pub enum TwitterMedia {
     Photo(String),
     Video(String),
-    //    Gif(String),  TODO:
 }
 
 #[derive(Deserialize)]
@@ -32,12 +31,7 @@ struct TwitterUserTimeline {
     data: Vec<TwitterRawTweet>,
     #[serde(default)]
     includes: TwitterTimelineIncludes,
-    //    meta: TwitterTimelineMeta,
 }
-//#[derive(Deserialize)]
-//struct TwitterTimelineMeta {
-//    result_count: u32,
-//}
 #[derive(Deserialize)]
 struct TwitterRawTweet {
     id: String,
@@ -60,7 +54,6 @@ struct TwitterTimelineIncludes {
 struct TwitterTimelineUser {
     id: String,
     name: String,
-    //username: String,
 }
 #[derive(Deserialize)]
 struct TwitterTimelineMedia {
@@ -113,11 +106,18 @@ impl TwitterClient {
             .send()?;
 
         let text = res.text()?;
-        let data: TwitterUserTimeline = serde_json::from_str(&text).expect("JSON schema is invalid");
+        let data: TwitterUserTimeline =
+            serde_json::from_str(&text).expect("JSON schema is invalid");
 
         let last_id = last_id.copied().unwrap_or_default();
 
         let mut res = vec![];
+        let author = data
+            .includes
+            .users
+            .iter()
+            .find(|f| f.id == user_id)
+            .expect("api doesn't returned author object");
 
         for tweet in data.data {
             let id = tweet.id.parse().expect("tweet id is not a number");
@@ -149,13 +149,6 @@ impl TwitterClient {
                     }
                 })
                 .collect();
-            // TODO: author of @username timeline is always @username... (if it not retweet)
-            let author = data
-                .includes
-                .users
-                .iter()
-                .find(|f| f.id == user_id)
-                .expect("api doesn't returned author object");
 
             res.push(TwitterTweet {
                 id,
@@ -175,11 +168,11 @@ impl TwitterClient {
     }
 }
 
-impl Into<ChannelPost> for TwitterTweet {
-    fn into(self) -> ChannelPost {
+impl From<TwitterTweet> for ChannelPost {
+    fn from(tweet: TwitterTweet) -> ChannelPost {
         ChannelPost {
-            text: self.text,
-            media: self
+            text: tweet.text,
+            media: tweet
                 .media
                 .iter()
                 .map(|f| match f {
@@ -187,8 +180,11 @@ impl Into<ChannelPost> for TwitterTweet {
                     TwitterMedia::Video(s) => ChannelPostMedia::Video(s.clone()),
                 })
                 .collect(),
-            source: format!("twitter // {}", self.author_name),
-            source_url: Some(format!("https://twitter.com/_/status/{}", self.id)),
+            source: format!("twitter // {}", tweet.author_name),
+            source_url: Some(format!(
+                "https://twitter.com/{}/status/{}",
+                tweet.author_name, tweet.id
+            )),
         }
     }
 }

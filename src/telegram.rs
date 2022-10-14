@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::sources::{ChannelPost, ChannelPostMedia};
 
@@ -26,7 +26,8 @@ struct TelegramErrorResponse {
 }
 
 fn escape_html(s: String) -> String {
-    s.chars().into_iter()
+    s.chars()
+        .into_iter()
         .map(|c| match c {
             '<' => "&lt;".into(),
             '>' => "&gt;".into(),
@@ -41,30 +42,42 @@ impl TelegramClient {
         Self { token }
     }
 
-    pub fn create_post(&self, chat_id: String, post: ChannelPost) -> Result<TelegramResponse, reqwest::Error> {
+    pub fn create_post(
+        &self,
+        chat_id: String,
+        post: ChannelPost,
+    ) -> Result<TelegramResponse, reqwest::Error> {
         if post.media.is_empty() {
             return Ok(TelegramResponse::Success);
             // TODO: send text
         }
 
-        let mut media: Vec<TelegramInputMedia> = post.media.iter().map(|f| match f {
-            ChannelPostMedia::Photo(url) => TelegramInputMedia {
-                r#type: "photo".into(),
-                media: url.into(),
-                caption: String::with_capacity(0),
-                parse_mode: String::with_capacity(0),
-            },
-            ChannelPostMedia::Video(url) => TelegramInputMedia {
-                r#type: "video".into(),
-                media: url.into(),
-                caption: String::with_capacity(0),
-                parse_mode: String::with_capacity(0),
-            },
-        }).collect();
-
+        let mut media: Vec<TelegramInputMedia> = post
+            .media
+            .iter()
+            .map(|f| match f {
+                ChannelPostMedia::Photo(url) => TelegramInputMedia {
+                    r#type: "photo".into(),
+                    media: url.into(),
+                    caption: String::with_capacity(0),
+                    parse_mode: String::with_capacity(0),
+                },
+                ChannelPostMedia::Video(url) => TelegramInputMedia {
+                    r#type: "video".into(),
+                    media: url.into(),
+                    caption: String::with_capacity(0),
+                    parse_mode: String::with_capacity(0),
+                },
+            })
+            .collect();
 
         if let Some(source_url) = post.source_url {
-            media[0].caption = format!("{}\n\nsrc: <a href=\"{}\">{}</a>", escape_html(post.text), source_url, escape_html(post.source));
+            media[0].caption = format!(
+                "{}\n\nsrc: <a href=\"{}\">{}</a>",
+                escape_html(post.text),
+                source_url,
+                escape_html(post.source)
+            );
             media[0].parse_mode = "HTML".into();
         } else {
             media[0].caption = format!("{}\n\nsrc: {}", post.text, post.source);
@@ -73,14 +86,20 @@ impl TelegramClient {
         let media = serde_json::to_string(&media).unwrap();
 
         let client = reqwest::blocking::Client::new();
-        let res = client.post(format!("https://api.telegram.org/bot{}/sendMediaGroup", self.token))
+        let res = client
+            .post(format!(
+                "https://api.telegram.org/bot{}/sendMediaGroup",
+                self.token
+            ))
             .query(&[("chat_id", chat_id), ("media", media)])
             .send()?;
 
         if !res.status().is_success() {
             let text = res.text().unwrap();
-            let tgres = serde_json::from_str(&text)
-                .unwrap_or(TelegramErrorResponse { error_code: 0, description: "(platfoxbot) Internal Error".into() });
+            let tgres = serde_json::from_str(&text).unwrap_or(TelegramErrorResponse {
+                error_code: 0,
+                description: "(platfoxbot) Internal Error".into(),
+            });
 
             Ok(TelegramResponse::Error(tgres.error_code, tgres.description))
         } else {
@@ -88,4 +107,3 @@ impl TelegramClient {
         }
     }
 }
-

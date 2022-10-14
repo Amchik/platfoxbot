@@ -2,11 +2,14 @@ use std::{fs, process::exit};
 
 use clap::Parser;
 
-use crate::{sources::twitter::TwitterClient, telegram::{TelegramClient, TelegramResponse}};
+use crate::{
+    sources::twitter::TwitterClient,
+    telegram::{TelegramClient, TelegramResponse},
+};
 
+mod config;
 mod sources;
 mod telegram;
-mod config;
 
 #[derive(Parser)]
 #[clap(version, about)]
@@ -16,7 +19,12 @@ struct Args {
     config: String,
 
     /// Cache file. Can be redefined in config.
-    #[clap(short = 's', long, value_parser, default_value = "platfoxbot.cache.json")]
+    #[clap(
+        short = 's',
+        long,
+        value_parser,
+        default_value = "platfoxbot.cache.json"
+    )]
     cache: String,
 
     /// Ignores config cache file and use by command line arguments.
@@ -67,7 +75,9 @@ fn main() {
         }
 
         for post in posts.iter().rev() {
-            let res = tg.create_post(cfg.telegram.chat_id.clone(), post.clone().into()).unwrap();
+            let res = tg
+                .create_post(cfg.telegram.chat_id.clone(), post.clone().into())
+                .unwrap();
 
             if let TelegramResponse::Error(code, description) = res {
                 eprintln!("[FAILTURE] Failed to post to telegram. {code}: {description}");

@@ -32,4 +32,3 @@ pub trait PostFabric {
     /// Returns empty vec on fail
     fn fetch_last_posts(&self) -> Vec<ChannelPost>;
 }
-
