@@ -14,6 +14,7 @@ pub struct TwitterTweet {
     pub id: u64,
     pub author_id: u64,
     pub author_name: String,
+    pub author_username: String,
     pub text: String,
     pub media: Vec<TwitterMedia>,
 }
@@ -52,6 +53,7 @@ struct TwitterTimelineIncludes {
 struct TwitterTimelineUser {
     id: String,
     name: String,
+    username: String,
 }
 #[derive(Deserialize)]
 struct TwitterTimelineMedia {
@@ -128,7 +130,7 @@ impl TwitterClient {
                 continue;
             }
 
-            let media = tweet
+            let media: Vec<TwitterMedia> = tweet
                 .attachments
                 .iter()
                 .flat_map(|attachments| &attachments.media_keys)
@@ -152,11 +154,22 @@ impl TwitterClient {
                 })
                 .collect();
 
+            let text = if media.is_empty() {
+                tweet.text
+            } else {
+                tweet
+                    .text
+                    .rsplit_once(' ')
+                    .map(|f| f.0.to_string())
+                    .unwrap_or(tweet.text)
+            };
+
             res.push(TwitterTweet {
                 id,
                 author_id: user_id.parse().unwrap(),
                 author_name: author.name.clone(),
-                text: tweet.text,
+                author_username: author.username.clone(),
+                text,
                 media,
             });
         }
@@ -180,7 +193,7 @@ impl From<TwitterTweet> for ChannelPost {
             source: format!("twitter // {}", tweet.author_name),
             source_url: Some(format!(
                 "https://twitter.com/{}/status/{}",
-                tweet.author_name, tweet.id
+                tweet.author_username, tweet.id
             )),
         }
     }
