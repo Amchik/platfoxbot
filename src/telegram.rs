@@ -42,9 +42,9 @@ impl TelegramClient {
         Self { token }
     }
 
-    pub fn create_post(
+    pub async fn create_post(
         &self,
-        chat_id: String,
+        chat_id: &String,
         post: ChannelPost,
     ) -> Result<TelegramResponse, reqwest::Error> {
         if post.media.is_empty() {
@@ -85,17 +85,18 @@ impl TelegramClient {
 
         let media = serde_json::to_string(&media).unwrap();
 
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         let res = client
             .post(format!(
                 "https://api.telegram.org/bot{}/sendMediaGroup",
                 self.token
             ))
-            .query(&[("chat_id", chat_id), ("media", media)])
-            .send()?;
+            .query(&[("chat_id", chat_id), ("media", &media)])
+            .send()
+            .await?;
 
         if !res.status().is_success() {
-            let text = res.text().unwrap();
+            let text = res.text().await?;
             let tgres = serde_json::from_str(&text).unwrap_or(TelegramErrorResponse {
                 error_code: 0,
                 description: "(platfoxbot) Internal Error".into(),

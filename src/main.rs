@@ -1,6 +1,7 @@
-use std::{fs, process::exit};
+use std::{collections::HashMap, fs, process::exit};
 
 use clap::Parser;
+use futures::future::join_all;
 
 use crate::{
     sources::twitter::TwitterClient,
@@ -36,7 +37,8 @@ struct Args {
     create_cache: bool,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     println!("Try reading config from {}...", args.config);
@@ -52,7 +54,7 @@ fn main() {
     let cfg = String::from_utf8_lossy(&bytes);
     let cfg: config::Config = toml::from_str(&cfg).unwrap();
 
-    let mut tw = TwitterClient::new(cfg.twitter.token);
+    let tw = TwitterClient::new(cfg.twitter.token);
     let tg = TelegramClient::new(cfg.telegram.token);
 
     let cache_filename = if args.ignore_config_cache_file {
@@ -61,37 +63,46 @@ fn main() {
         cfg.cache.unwrap_or(args.cache)
     };
 
-    if let Ok(bytes) = fs::read(&cache_filename) {
-        tw.last_ids = serde_json::from_slice(&bytes).unwrap_or_default();
-    }
+    let mut cache: HashMap<String, u64> = match fs::read(&cache_filename) {
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
+        _ => HashMap::new(),
+    };
 
-    let mut failed = false;
+    // Maybe it bad idea
+    let tweets = {
+        let jobs = cfg.twitter.ids.into_iter().map(|user_id| {
+            let last_id = cache.get(&user_id).copied();
 
-    for user_id in cfg.twitter.ids {
-        let posts = tw.fetch_from(user_id).unwrap();
+            tw.fetch_from(user_id, last_id)
+        });
+        let tweets = join_all(jobs).await;
+        // NOTE: 2 for loops may be also bad idea, use .map(|v| { ...; v }) aka lazy-loading
+        for tweet in tweets.iter().flatten().filter(|v| !v.is_empty()) {
+            let tweet = &tweet[0];
 
-        if args.create_cache {
-            continue;
+            cache.insert(tweet.author_id.to_string(), tweet.id);
         }
 
-        for post in posts.iter().rev() {
-            let res = tg
-                .create_post(cfg.telegram.chat_id.clone(), post.clone().into())
-                .unwrap();
+        tweets
+            .into_iter()
+            .flatten()
+            .flat_map(|v| v.into_iter().rev())
+    };
 
-            if let TelegramResponse::Error(code, description) = res {
-                eprintln!("[FAILTURE] Failed to post to telegram. {code}: {description}");
-                eprintln!("{:#?}", post);
-                failed = true;
-            }
-        }
-    }
-
-    let ids_export = serde_json::to_string(&tw.last_ids).unwrap();
-
+    // Write cache
+    let ids_export = serde_json::to_string(&cache).unwrap();
     fs::write(cache_filename, ids_export).expect("Caching IDs");
 
-    if failed {
-        exit(2);
+    for tweet in tweets {
+        let tweet_id = tweet.id;
+
+        let res = tg
+            .create_post(&cfg.telegram.chat_id, tweet.into())
+            .await
+            .unwrap_or_else(|e| TelegramResponse::Error(0, e.to_string()));
+
+        if let TelegramResponse::Error(code, description) = res {
+            eprintln!("Failed to repost {}: {description} (code {code})", tweet_id);
+        }
     }
 }

@@ -7,8 +7,6 @@ use super::{ChannelPost, ChannelPostMedia};
 pub struct TwitterClient {
     /// Twitter bearer token
     pub token: String,
-    /// HashMap of known since_ids in format user_id -> last_id
-    pub last_ids: HashMap<String, u64>,
 }
 
 #[derive(Clone, Debug)]
@@ -70,15 +68,14 @@ struct TwitterTimelineMediaVariants {
 
 impl TwitterClient {
     pub fn new(token: String) -> Self {
-        Self {
-            token,
-            last_ids: HashMap::new(),
-        }
+        Self { token }
     }
 
-    pub fn fetch_from(&mut self, user_id: String) -> Result<Vec<TwitterTweet>, reqwest::Error> {
-        let last_id = self.last_ids.get(&user_id);
-
+    pub async fn fetch_from(
+        &self,
+        user_id: String,
+        last_id: Option<u64>,
+    ) -> Result<Vec<TwitterTweet>, reqwest::Error> {
         let query = {
             let mut query = HashMap::from([
                 ("exclude", "replies,retweets".into()),
@@ -95,7 +92,7 @@ impl TwitterClient {
             query
         };
 
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::Client::new();
         let res = client
             .get(format!(
                 "https://api.twitter.com/2/users/{}/tweets",
@@ -103,13 +100,18 @@ impl TwitterClient {
             ))
             .query(&query)
             .header("Authorization", format!("Bearer {}", self.token))
-            .send()?;
+            .send()
+            .await?;
 
-        let text = res.text()?;
+        let text = res.text().await?;
         let data: TwitterUserTimeline =
             serde_json::from_str(&text).expect("JSON schema is invalid");
 
-        let last_id = last_id.copied().unwrap_or_default();
+        if data.data.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let last_id = last_id.unwrap_or_default();
 
         let mut res = vec![];
         let author = data
@@ -157,11 +159,6 @@ impl TwitterClient {
                 text: tweet.text,
                 media,
             });
-        }
-
-        // Update last id
-        if let Some(fart) = res.first() {
-            self.last_ids.insert(user_id, fart.id);
         }
 
         Ok(res)
