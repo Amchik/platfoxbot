@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use lazy_static::lazy_static;
+use regex::Regex;
 use serde::Deserialize;
 
 use super::{ChannelPost, ChannelPostMedia};
@@ -154,14 +156,14 @@ impl TwitterClient {
                 })
                 .collect();
 
+            lazy_static! {
+                static ref RE: Regex = Regex::new("https:\\/\\/t\\.co\\/[^ ]+$").unwrap();
+            }
+
             let text = if media.is_empty() {
                 tweet.text
             } else {
-                tweet
-                    .text
-                    .rsplit_once(' ')
-                    .map(|f| f.0.to_string())
-                    .unwrap_or(tweet.text)
+                RE.replace(&tweet.text, "").to_string()
             };
 
             res.push(TwitterTweet {
