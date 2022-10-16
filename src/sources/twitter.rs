@@ -157,7 +157,7 @@ impl TwitterClient {
                 .collect();
 
             lazy_static! {
-                static ref RE: Regex = Regex::new("https:\\/\\/t\\.co\\/[^ ]+$").unwrap();
+                static ref RE: Regex = Regex::new("https://t\\.co/[^ ]+$").unwrap();
             }
 
             let text = if media.is_empty() {
